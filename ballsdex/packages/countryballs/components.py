@@ -75,10 +75,11 @@ class CountryballNamePrompt(Modal, title=f"Catch this {settings.collectible_name
                     f"This is a **new {settings.collectible_name}** "
                     "that has been added to your completion!"
                 )
+            # coins_rewarded = ball.player.coins  # Assuming coins were updated in `catch_ball`
             await interaction.followup.send(
                 f"{interaction.user.mention} You caught **{self.ball.name}!** "
-                f"`(#{ball.pk:0X}, {ball.attack_bonus:+}%/{ball.health_bonus:+}%)`\n\n"
-                f"{special}"
+                f"`(#{ball.pk:0X}, {ball.attack_bonus:+}%/{ball.health_bonus:+}%)`\n"
+                f"{special}\n\nYou also received **{self.coins_rewarded} coin(s)**!"
             )
             self.button.disabled = True
             await interaction.followup.edit_message(self.ball.message.id, view=self.button.view)
@@ -109,7 +110,11 @@ class CountryballNamePrompt(Modal, title=f"Catch this {settings.collectible_name
             weights = [x.rarity for x in population] + [common_weight]
             # None is added representing the common countryball
             special = random.choices(population=population + [None], weights=weights, k=1)[0]
-
+        
+        self.coins_rewarded = random.randint(1, 10)  # Random amount between 10 and 50
+        player.coins += self.coins_rewarded
+        await player.save()
+        
         is_new = not await BallInstance.filter(player=player, ball=self.ball.model).exists()
         ball = await BallInstance.create(
             ball=self.ball.model,
@@ -154,18 +159,44 @@ class CatchButton(Button):
             await interaction.response.send_modal(CountryballNamePrompt(self.ball, self))
 
 
+class HintButton(Button):
+    def __init__(self, ball: "CountryBall"):
+        super().__init__(style=discord.ButtonStyle.secondary, label="Hint")
+        self.ball = ball
+
+    async def callback(self, interaction: discord.Interaction):
+        if self.ball.catched:
+            await interaction.response.send_message("This ball has already been caught!", ephemeral=True)
+            return
+
+        # Generate a hint by revealing a few random letters
+        name = self.ball.name
+        hint = list("_" * len(name))
+        reveal_count = max(1, len(name) // 3)  # Reveal at least 1 letter, or 1/3 of the name
+        revealed_indices = random.sample(range(len(name)), reveal_count)
+
+        for index in revealed_indices:
+            hint[index] = name[index]
+
+        hint_message = f"Hint: `{''.join(hint)}`"
+        await interaction.response.send_message(hint_message, ephemeral=True)
+
+
 class CatchView(View):
     def __init__(self, ball: "CountryBall"):
         super().__init__()
         self.ball = ball
-        self.button = CatchButton(ball)
-        self.add_item(self.button)
+        self.catch_button = CatchButton(ball)
+        self.hint_button = HintButton(ball)
+        self.add_item(self.catch_button)
+        self.add_item(self.hint_button)
 
     async def interaction_check(self, interaction: discord.Interaction["BallsDexBot"], /) -> bool:
         return await interaction.client.blacklist_check(interaction)
 
     async def on_timeout(self):
-        self.button.disabled = True
+        self.catch_button.disabled = True
+        self.hint_button.disabled = True
         if self.ball.message:
             try:
                 await self.ball.message.edit(view=self)

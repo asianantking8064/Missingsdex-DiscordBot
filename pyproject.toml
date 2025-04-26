@@ -1,3 +1,4 @@
+[tool]
 [tool.poetry]
 name = "ballsdex"
 version = "1.0.0a1"
@@ -7,23 +8,10 @@ license = "MIT"
 
 [tool.poetry.dependencies]
 python = "^3.12"
-
-# asyncio
-uvloop = { version = "^0.19.0", markers = "sys_platform != 'win32'" }
-
-# discord
 "discord.py" = "^2.4.0"
-
-# fastapi
 fastapi = "^0.111.0"
-fastapi-admin = {git = "https://github.com/fastapi-admin/fastapi-admin", rev = "ebea3bf71689caa583fe55aa25db899cf8eeae31"}
 uvicorn = "^0.30.1"
-
-# database ORM
-tortoise-orm = {extras = ["asyncpg"], version = "^0.21.4"}
 tortoise-cli = "^0.1.2"
-
-# misc
 rich = "^13.7.1"
 python-dateutil = "^2.9.0"
 Pillow = "^10.4.0"
@@ -31,13 +19,28 @@ aerich = "^0.6.3"
 pyyaml = "^6.0.1"
 cachetools = "^5.3.3"
 
+[tool.poetry.dependencies.uvloop]
+version = "^0.19.0"
+markers = "sys_platform != 'win32'"
+
+[tool.poetry.dependencies.fastapi-admin]
+git = "https://github.com/fastapi-admin/fastapi-admin"
+rev = "ebea3bf71689caa583fe55aa25db899cf8eeae31"
+
+[tool.poetry.dependencies.tortoise-orm]
+extras = ["asyncpg"]
+version = "^0.21.4"
+
+[tool.poetry.group]
 [tool.poetry.group.dev.dependencies]
 pre-commit = "^3.7.1"
-black = {version = "^24.4.2", allow-prereleases = true}
 flake8-pyproject = "^1.2.3"
 pyright = "^1.1.335"
 isort = "^5.12.0"
 
+[tool.poetry.group.dev.dependencies.black]
+version = "^24.4.2"
+allow-prereleases = true
 
 [tool.poetry.group.metrics.dependencies]
 prometheus-client = "^0.20.0"
@@ -45,11 +48,7 @@ prometheus-client = "^0.20.0"
 [tool.aerich]
 tortoise_orm = "ballsdex.__main__.TORTOISE_ORM"
 location = "./migrations"
-src_folder = "./ballsdex"
-
-[build-system]
-requires = ["poetry-core>=1.0.0"]
-build-backend = "poetry.core.masonry.api"
+src_folder = "./."
 
 [tool.black]
 line-length = 99
@@ -61,3 +60,7 @@ max-line-length = 99
 [tool.isort]
 profile = "black"
 line_length = 99
+
+[build-system]
+requires = ["poetry-core>=1.0.0"]
+build-backend = "poetry.core.masonry.api"

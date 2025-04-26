@@ -34,6 +34,7 @@ class Trade(commands.GroupCog):
 
     def __init__(self, bot: "BallsDexBot"):
         self.bot = bot
+        self.active_trades: dict[int, TradeMenu] = {}
         self.trades: dict[int, dict[int, list[TradeMenu]]] = defaultdict(lambda: defaultdict(list))
 
     def get_trade(
@@ -342,3 +343,37 @@ class Trade(commands.GroupCog):
         source = TradeViewFormat(history, interaction.user.name, self.bot)
         pages = Pages(source=source, interaction=interaction)
         await pages.start()
+
+    @app_commands.command()
+    async def addcoins(self, interaction: discord.Interaction, amount: int):
+        """
+        Add coins to your trade proposal.
+    
+        Parameters
+        ----------
+        amount: int
+            The number of coins to add.
+        """
+        if amount <= 0:
+            await interaction.response.send_message("You must add a positive amount of coins.", ephemeral=True)
+            return
+    
+        # Retrieve the TradeMenu and TradingUser using get_trade
+        trade, trader = self.get_trade(interaction)
+        if not trade or not trader:
+            await interaction.response.send_message("You do not have an ongoing trade.", ephemeral=True)
+            return
+    
+        # Check if the user has enough coins
+        if trader.player.coins < amount:
+            await interaction.response.send_message("You do not have enough coins.", ephemeral=True)
+            return
+    
+        # Add coins to the trade proposal
+        trader.coins += amount
+    
+        # Refresh the trade menu embed
+        trade._generate_embed()
+        await trade.message.edit(embed=trade.embed)
+    
+        await interaction.response.send_message(f"Added {amount} coins to your trade proposal.", ephemeral=True)

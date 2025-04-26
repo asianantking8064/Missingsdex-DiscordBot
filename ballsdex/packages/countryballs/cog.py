@@ -1,4 +1,4 @@
-gitimport logging
+import logging
 from typing import TYPE_CHECKING, Optional
 
 import discord

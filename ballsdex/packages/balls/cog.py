@@ -621,7 +621,41 @@ class Balls(commands.GroupCog, group_name=settings.players_group_cog_name):
             f"You have {balls} {special_str}{shiny_str}"
             f"{country}{settings.collectible_name}{plural}{guild}."
         )
+    '''    
+    @app_commands.command()
+    async def nickname(
+        self,
+        interaction: discord.Interaction,
+        ball: BallInstanceTransform,
+        nickname: str | None,
+    ):
+        """
+        Set or remove a nickname for a ball.
 
+        Parameters
+        ----------
+        ball: BallInstanceTransform
+            The ball instance to nickname.
+        nickname: str | None
+            The nickname to set. Leave empty to remove the nickname.
+        """
+        if len(nickname) > 64:
+            await interaction.response.send_message(
+                "Nicknames must be 64 characters or fewer.", ephemeral=True
+            )
+            return
+
+        ball.nickname = nickname.strip() if nickname else None
+        await ball.save()
+
+        if nickname:
+            await interaction.response.send_message(
+                f"Nickname for `{ball}` has been set to **{nickname}**.", ephemeral=True
+            )
+        else:
+            await interaction.response.send_message(
+                f"Nickname for `{ball}` has been removed.", ephemeral=True
+    '''
 
 async def inventory_privacy(
     bot: "BallsDexBot",

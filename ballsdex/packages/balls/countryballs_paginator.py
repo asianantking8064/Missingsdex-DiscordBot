@@ -19,7 +19,26 @@ class CountryballsSource(menus.ListPageSource):
     async def format_page(self, menu: CountryballsSelector, balls: List[BallInstance]):
         menu.set_options(balls)
         return True  # signal to edit the page
-
+'''
+class CountryballsSelector(Pages):
+    def set_options(self, balls: List[BallInstance]):
+        options: List[discord.SelectOption] = []
+        for ball in balls:
+            emoji = self.bot.get_emoji(int(ball.countryball.emoji_id))
+            favorite = "❤️ " if ball.favorite else ""
+            shiny = "✨ " if ball.shiny else ""
+            special = ball.special_emoji(self.bot, True)
+            nickname = f" ({ball.nickname})" if ball.nickname else ""
+            options.append(
+                discord.SelectOption(
+                    label=f"{favorite}{shiny}{special}#{ball.pk:0X} {ball.countryball.country}{nickname}",
+                    description=f"ATK: {ball.attack_bonus:+d}% • HP: {ball.health_bonus:+d}% • "
+                    f"Caught on {ball.catch_date.strftime('%d/%m/%y %H:%M')}",
+                    emoji=emoji,
+                    value=f"{ball.pk}",
+                )
+            )
+        self.select_ball_menu.options = options'''
 
 class CountryballsSelector(Pages):
     def __init__(self, interaction: discord.Interaction["BallsDexBot"], balls: List[BallInstance]):

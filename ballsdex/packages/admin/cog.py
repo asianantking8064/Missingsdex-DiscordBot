@@ -81,6 +81,7 @@ class Admin(commands.GroupCog):
         name=settings.players_group_cog_name, description="Balls management"
     )
     logs = app_commands.Group(name="logs", description="Bot logs management")
+    shop = app_commands.Group(name="shop", description="Balls shop management")
     history = app_commands.Group(name="history", description="Trade history management")
     info = app_commands.Group(name="info", description="Information Commands")
 
@@ -1627,3 +1628,29 @@ class Admin(commands.GroupCog):
         )
         embed.set_thumbnail(url=user.display_avatar)  # type: ignore
         await interaction.followup.send(embed=embed, ephemeral=True)
+
+    @shop.command(name="add_coins")
+    @app_commands.checks.has_any_role(*settings.root_role_ids)
+    async def add_coins(self, interaction: discord.Interaction, user: discord.Member, amount: int):
+        """
+        Add coins to a user's balance (Admin only).
+    
+        Parameters
+        ----------
+        user: discord.Member
+            The user to add coins to.
+        amount: int
+            The amount of coins to add.
+        """
+        if amount < 0:
+            await interaction.response.send_message("Amount must be positive.", ephemeral=True)
+            return
+    
+        player, _ = await Player.get_or_create(discord_id=user.id)
+        player.coins += amount
+        await player.save()
+    
+        await interaction.response.send_message(
+            f"Added **{amount}** coins to {user.mention}. They now have **{player.coins}** coins.",
+            ephemeral=True,
+        )

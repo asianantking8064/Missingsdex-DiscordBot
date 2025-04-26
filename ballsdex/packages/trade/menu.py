@@ -163,37 +163,52 @@ class TradeMenu:
     def _generate_embed(self):
         add_command = self.cog.add.extras.get("mention", "`/trade add`")
         remove_command = self.cog.remove.extras.get("mention", "`/trade remove`")
-
-        self.embed.title = f"{settings.collectible_name.title()}s trading"
+        add_coins_command = self.cog.addcoins.extras.get("mention", "`/trade addcoins`")  # Add a command for adding coins
+    
+        self.embed.title = f"{settings.collectible_name.title()}s Trading"
         self.embed.color = discord.Colour.blurple()
         self.embed.description = (
             f"Add or remove {settings.collectible_name}s you want to propose to the other player "
             f"using the {add_command} and {remove_command} commands.\n"
+            f"To add coins to the trade, use {add_coins_command}.\n"
             "Once you're finished, click the lock button below to confirm your proposal.\n"
             "You can also lock with nothing if you're receiving a gift.\n\n"
             "*You have 30 minutes before this interaction ends.*"
         )
-        self.embed.set_footer(
-            text="This message is updated every 15 seconds, "
-            "but you can keep on editing your proposal."
+        '''
+        self.embed.add_field(
+            name=f"{self.trader1.user.name}'s Offer",
+            value=(
+                f"{len(self.trader1.proposal)} {settings.collectible_name}(s)\n"
+            ),
+            inline=True,
         )
+        self.embed.add_field(
+            name=f"{self.trader2.user.name}'s Offer",
+            value=(
+                f"{len(self.trader2.proposal)} {settings.collectible_name}(s)\n"
+            ),
+            inline=True,
+        )
+        '''
 
     async def update_message_loop(self):
         """
-        A loop task that updates each 5 second the menu with the new content.
+        A loop task that updates the menu every 15 seconds with the new content.
         """
-
         assert self.task
         start_time = datetime.utcnow()
-
+    
         while True:
             await asyncio.sleep(15)
             if datetime.utcnow() - start_time > timedelta(minutes=15):
                 self.embed.colour = discord.Colour.dark_red()
                 await self.cancel("The trade timed out")
                 return
-
+    
             try:
+                # Regenerate the embed to include updated coins
+                self._generate_embed()
                 fill_trade_embed_fields(self.embed, self.bot, self.trader1, self.trader2)
                 await self.message.edit(embed=self.embed)
             except Exception:
@@ -293,7 +308,21 @@ class TradeMenu:
             await TradeObject.create(
                 trade=trade, ballinstance=countryball, player=self.trader2.player
             )
+        # Transfer coins
+        if self.trader1.coins > 0:
+            if self.trader1.player.coins < self.trader1.coins:
+                raise InvalidTradeOperation()  # Prevent invalid trades
+            self.trader1.player.coins -= self.trader1.coins
+            self.trader2.player.coins += self.trader1.coins
 
+        if self.trader2.coins > 0:
+            if self.trader2.player.coins < self.trader2.coins:
+                raise InvalidTradeOperation()  # Prevent invalid trades
+            self.trader2.player.coins -= self.trader2.coins
+            self.trader1.player.coins += self.trader2.coins
+
+        await self.trader1.player.save()
+        await self.trader2.player.save()
         for countryball in valid_transferable_countryballs:
             await countryball.unlock()
             await countryball.save()

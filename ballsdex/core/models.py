@@ -197,6 +197,14 @@ class BallInstance(models.Model):
         null=True,
         default=None,
     )
+    '''
+    nickname = fields.CharField(
+        max_length=64,
+        null=True,
+        blank=True,
+        description="Nickname for the ball instance",
+    )
+    '''
     extra_data = fields.JSONField(default={})
 
     class Meta:
@@ -235,7 +243,7 @@ class BallInstance(models.Model):
 
     def __str__(self) -> str:
         return self.to_string()
-
+    
     def to_string(self, bot: discord.Client | None = None, is_trade: bool = False) -> str:
         emotes = ""
         if bot and self.pk in bot.locked_balls and not is_trade:  # type: ignore
@@ -254,7 +262,29 @@ class BallInstance(models.Model):
             else f"<Ball {self.ball_id}>"
         )
         return f"{emotes}#{self.pk:0X} {country}"
-
+        
+    
+    '''
+    def to_string(self, bot: discord.Client | None = None, is_trade: bool = False) -> str:
+        emotes = ""
+        if bot and self.pk in bot.locked_balls and not is_trade:  # type: ignore
+            emotes += "🔒"
+        if self.favorite:
+            emotes += "❤️"
+        if self.shiny:
+            emotes += "✨"
+        if emotes:
+            emotes += " "
+        if self.specialcard:
+            emotes += self.special_emoji(bot)
+        country = (
+            self.countryball.country
+            if isinstance(self.countryball, Ball)
+            else f"<Ball {self.ball_id}>"
+        )
+        nickname = f" ({self.nickname})" if self.nickname else ""
+        return f"{emotes}#{self.pk:0X} {country}{nickname}"
+    '''
     def special_emoji(self, bot: discord.Client | None, use_custom_emoji: bool = True) -> str:
         if self.specialcard:
             if not use_custom_emoji:
@@ -385,11 +415,18 @@ class Player(models.Model):
         description="How you want to handle privacy",
         default=PrivacyPolicy.DENY,
     )
+    coins = fields.IntField(default=0, description="The number of coins the player has")
     balls: fields.BackwardFKRelation[BallInstance]
-
+    claimed_collectors: fields.ReverseRelation["ClaimedCollector"]
     def __str__(self) -> str:
         return str(self.discord_id)
+    
+class ClaimedCollector(models.Model):
+    player = fields.ForeignKeyField("models.Player", related_name="claimed_collectors")
+    ball = fields.ForeignKeyField("models.Ball")
 
+    class Meta:
+        unique_together = ("player", "ball")
 
 class BlacklistedID(models.Model):
     discord_id = fields.BigIntField(

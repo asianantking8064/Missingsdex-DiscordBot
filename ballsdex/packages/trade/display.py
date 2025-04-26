@@ -108,6 +108,8 @@ def fill_trade_embed_fields(
     trader1_proposal = _build_list_of_strings(trader1, bot, compact)
     trader2_proposal = _build_list_of_strings(trader2, bot, compact)
 
+    trader1_proposal[0] = f"Coins: **{trader1.coins}**\n" + trader1_proposal[0]
+    trader2_proposal[0] = f"Coins: **{trader2.coins}**\n" + trader2_proposal[0]
     # then display the text. first page is easy
     embed.add_field(
         name=f"{_get_prefix_emote(trader1)} {trader1.user.name}",

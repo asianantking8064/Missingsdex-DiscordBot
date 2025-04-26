@@ -13,6 +13,7 @@ class TradingUser:
     user: "discord.User | discord.Member"
     player: "Player"
     proposal: list["BallInstance"] = field(default_factory=list)
+    coins: int = 0
     locked: bool = False
     cancelled: bool = False
     accepted: bool = False
