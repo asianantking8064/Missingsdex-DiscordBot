@@ -149,7 +149,7 @@ class Battle(commands.GroupCog):
             await interaction.followup.send(
                 f"Done! Waiting for the other player to press `Ready`.", ephemeral=True
             )
-
+            
     async def update_first_battle_embed(self, interaction: discord.Interaction, guild_battle: GuildBattle):
         """Update the first battle embed to show readiness status."""
         embed = discord.Embed(
