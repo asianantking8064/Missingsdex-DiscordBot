@@ -106,12 +106,15 @@ class Info(commands.Cog):
             f"**{players_count:,}** players that caught "
             f"**{balls_instances_count:,}** {settings.collectible_name}s\n"
             f"**{len(self.bot.guilds):,}** servers playing\n\n"
-            "This bot was made by **El Laggron**, consider supporting me on my "
+            "The repository this bot is based on was made by **El Laggron**, support him on his "
             "[Patreon](https://patreon.com/retke) :heart:\n\n"
+            f"This bot is owned by **asianantking8064**\n\n"
             f"[Discord server]({settings.discord_invite}) • [Invite me]({invite_link}) • "
-            f"[Source code and issues]({settings.github_link})\n"
+            f"[Source code and issues (Currently not migrated with most recent changes to protect code because CodeBlueJay is selfish)]({settings.github_link})\n"
             f"[Terms of Service]({settings.terms_of_service}) • "
             f"[Privacy policy]({settings.privacy_policy})"
+            f"\n\nAdditional packages made by **CodeBlueJay** and **asianantking8064**"
+            f"\n(*shop*, *battle*, *boss*, *collector*, as well as *coins*)"
         )
 
         embed.set_thumbnail(url=self.bot.user.display_avatar.url)

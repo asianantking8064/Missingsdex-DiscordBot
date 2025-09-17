@@ -149,7 +149,7 @@ class Battle(commands.GroupCog):
             await interaction.followup.send(
                 f"Done! Waiting for the other player to press `Ready`.", ephemeral=True
             )
-            
+
     async def update_first_battle_embed(self, interaction: discord.Interaction, guild_battle: GuildBattle):
         """Update the first battle embed to show readiness status."""
         embed = discord.Embed(
@@ -197,6 +197,7 @@ class Battle(commands.GroupCog):
         opponent_ball = guild_battle.battle.p2_balls[0] if guild_battle.current_turn == guild_battle.author else guild_battle.battle.p1_balls[0]
 
         # Trigger passive abilities for the active ball
+        '''
         for ability in active_ball.abilities:
             if ability.is_passive and ability.trigger == "on_battlefield":
                 # Apply the ability's effect
@@ -215,7 +216,7 @@ class Battle(commands.GroupCog):
                 guild_battle.battle.battle_log.append(
                     f"{opponent_ball.emoji} {opponent_ball.name}'s ability `{ability.name}` triggered: {ability.description}"
                 )
-
+        '''
         guild_battle.battle.battle_log.append(f"**{guild_battle.current_turn.display_name}**")
     
         # Check for user-initiated abilities
@@ -672,20 +673,29 @@ class Battle(commands.GroupCog):
         is_main_battle_embed = guild_battle.author_ready and guild_battle.opponent_ready
 
         if is_main_battle_embed:
-            # Main battle embed logic
-            author_ball = guild_battle.battle.p1_balls[0]
-            opponent_ball = guild_battle.battle.p2_balls[0]
+            # Determine the active ball and opponent ball based on the current turn
+            if guild_battle.current_turn == guild_battle.author:
+                active_ball = guild_battle.battle.p1_balls[0] if guild_battle.battle.p1_balls else None
+                opponent_ball = guild_battle.battle.p2_balls[0] if guild_battle.battle.p2_balls else None
+            else:
+                active_ball = guild_battle.battle.p2_balls[0] if guild_battle.battle.p2_balls else None
+                opponent_ball = guild_battle.battle.p1_balls[0] if guild_battle.battle.p1_balls else None
 
-            # Trigger passive abilities for the active and opponent balls
-            for ball, opponent in [(author_ball, opponent_ball), (opponent_ball, author_ball)]:
-                for ability in ball.abilities:
-                    if ability.is_passive and ability.trigger == "on_battlefield":
-                        # Apply the ability's effect
-                        ability.logic(ball, opponent)
-                        # Log the ability's effect
-                        guild_battle.battle.battle_log.append(
-                            f"{ball.emoji} {ability.activation_message}"
-                        )
+            # Trigger passive abilities for the active ball
+            for ability in active_ball.abilities:
+                if ability.is_passive and ability.trigger == "on_battlefield":
+                    ability.logic(active_ball, opponent_ball)
+                    guild_battle.battle.battle_log.append(
+                        f"{active_ball.emoji} {active_ball.name}'s ability `{ability.name}` triggered: {ability.description}"
+                    )
+            
+            # Trigger passive abilities for the opponent's ball
+            for ability in opponent_ball.abilities:
+                if ability.is_passive and ability.trigger == "on_battlefield":
+                    ability.logic(opponent_ball, active_ball)
+                    guild_battle.battle.battle_log.append(
+                        f"{opponent_ball.emoji} {opponent_ball.name}'s ability `{ability.name}` triggered: {ability.description}"
+                    )
 
             # Main battle embed creation logic
             active_ball = guild_battle.battle.p1_balls[0] if guild_battle.current_turn == guild_battle.author else guild_battle.battle.p2_balls[0]
@@ -720,7 +730,7 @@ class Battle(commands.GroupCog):
             )
             embed.add_field(
                 name=f"{guild_battle.author.display_name}'s Ball",
-                value=f"{author_ball.emoji} {author_ball.name} (HP: {author_ball.health}, ATK: {author_ball.attack})",
+                value=f"{active_ball.emoji} {active_ball.name} (HP: {active_ball.health}, ATK: {active_ball.attack})",
                 inline=True,
             )
             embed.add_field(

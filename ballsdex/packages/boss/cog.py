@@ -714,8 +714,8 @@ class Boss(commands.GroupCog):
                 player=player,
                 shiny=False,
                 special=special,
-                attack_bonus=0,
-                health_bonus=0,
+                attack_bonus=random.randint(-20, 20),
+                health_bonus=random.randint(-20, 20),
             )
             await boss_channel.send(
                 f"BOSS HAS CONCLUDED.\n{total}\n<@{bosswinner}> has won the Boss Battle!\n\n"

@@ -86,7 +86,92 @@ def define_abilities() -> Dict[str, Ability]:
             activation_message="`Broken Seal` activated, causing Sealed Reichtangle to double its HP and ATK!",
             ends_turn=False,  # Passive abilities do not end the turn
         ),
-    }
+        "the_only_missing": Ability(
+            name="The only missing!",
+            description="Missing ball can make the opponent's ball disappear for 5 turns from the Battlefield. (Usable twice)",
+            damage=0,
+            max_uses=2,
+            ball_name="Missing Ball",
+            logic=lambda attacker, defender: setattr(defender, "disappeared", 2),
+            is_passive=False,
+            trigger="user_initiated",
+            activation_message="Missing Ball's `The only missing!` made the opponent's ball disappear for 2 turns!",
+            ends_turn=True,
+        ),
+        "black_may": Ability(
+            name="Black May",
+            description="Thaitangle can boost its attack by 200% for 3 rounds, but if the targeted ball does not die, then it dies immediately.",
+            damage=0,
+            max_uses=1,
+            ball_name="Thaitangle",
+            logic=lambda attacker, defender: (
+                setattr(attacker, "attack", int(attacker.attack * 2)),
+                setattr(attacker, "black_may_turns", 3),
+            ),
+            is_passive=False,
+            trigger="user_initiated",
+            activation_message="Thaitangle's `Black May` boosted its attack by 200% for 3 rounds!",
+            ends_turn=False,
+        ),
+        "tangle_time": Ability(
+            name="Tangle Time!!!",
+            description="Mauritangle can make the opponents dance to the tango for 5 rounds, decreasing their attack by 33%.",
+            damage=0,
+            max_uses=1,
+            ball_name="Mauritangle",
+            logic=lambda attacker, defender: setattr(defender, "attack", int(defender.attack * 0.67)),
+            is_passive=False,
+            trigger="user_initiated",
+            activation_message="Mauritangle's `Tangle Time!!!` reduced the opponent's attack by 33% for 5 rounds!",
+            ends_turn=True,
+        ),
+        "randomizer": Ability(
+            name="Randomizer!",
+            description="When Random Ball gets killed, it chooses a random ball from the opponent's deck and uses its attack and HP. (Usable once)",
+            damage=0,
+            max_uses=1,
+            ball_name="Random Ball",
+            logic=lambda attacker, defender: (
+                setattr(attacker, "health", random.choice(defender.deck).health),
+                setattr(attacker, "attack", random.choice(defender.deck).attack),
+            ),
+            is_passive=True,
+            trigger="on_death",
+            activation_message="Random Ball's `Randomizer!` activated, copying stats from a random opponent's ball!",
+            ends_turn=False,
+        ),
+        "ice_berg_crash": Ability(
+            name="Ice Berg Crash!",
+            description="Arctic Ocean can use its icebergs to stun the opponent for 2 turns and deal 420 damage. (Usable twice)",
+            damage=420,
+            max_uses=2,
+            ball_name="Arctic Ocean",
+            logic=lambda attacker, defender: (
+                setattr(defender, "health", defender.health - 420),
+                setattr(defender, "stunned", 2),
+            ),
+            is_passive=False,
+            trigger="user_initiated",
+            activation_message="Arctic Ocean's `Ice Berg Crash!` dealt 420 damage and stunned the opponent for 2 turns!",
+            ends_turn=True,
+        ),
+        "brothers_made_of_snow_and_ice": Ability(
+            name="Brothers made of Snow and Ice!",
+            description="When Arctic Ocean is in your deck, both Arctic Ocean and Antarctic Empire gain 300 stats.",
+            damage=0,
+            max_uses=-1,
+            ball_name="Antarctic Empire",
+            logic=lambda attacker, defender: (
+                setattr(attacker, "health", attacker.health + 300),
+                setattr(attacker, "attack", attacker.attack + 300),
+            ) if any(ball.ball_name == "Arctic Ocean" for ball in attacker.deck) else None,
+            is_passive=True,
+            trigger="on_battlefield",
+            activation_message="Antarctic Empire's `Brothers made of Snow and Ice!` boosted its stats by 300!",
+            ends_turn=False,
+        ),
+    }        
+
 
 @dataclass
 class BattleBall:

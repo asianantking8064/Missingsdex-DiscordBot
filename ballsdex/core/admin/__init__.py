@@ -24,7 +24,7 @@ from tortoise.contrib.fastapi import register_tortoise
 
 from ballsdex.__main__ import TORTOISE_ORM
 from ballsdex.core.admin import resources, routes  # noqa: F401
-from ballsdex.core.admin.resources import User
+from ballsdex.core.models import Player, User
 
 BASE_DIR = pathlib.Path(".")
 

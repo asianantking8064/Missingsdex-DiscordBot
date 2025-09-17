@@ -11,9 +11,59 @@ from ballsdex.core.models import (
 from ballsdex.core.utils.transformers import BallEnabledTransform
 from tortoise.exceptions import DoesNotExist
 
+RARITY_REQUIREMENTS = [
+    (0.0020, 200),
+    (0.0026, 250),
+    (0.0030, 300),
+    (0.0038, 350),
+    (0.0048, 400),
+    (0.0061, 450),
+    (0.0064, 475),
+    (0.0074, 500),
+    (0.0078, 525),
+    (0.0081, 550),
+    (0.0085, 575),
+    (0.0089, 600),
+    (0.0093, 625),
+    (0.0098, 650),
+    (0.0103, 675),
+    (0.0108, 700),
+    (0.0114, 725),
+    (0.0120, 750),
+    (0.0129, 775),
+    (0.0135, 800),
+    (0.0142, 825),
+    (0.0250, 1000),
+]
+
+DIAMOND_SHINY_REQUIREMENTS_CLUSTERED = [
+    (0.0020, 10),  # T1
+    (0.0026, 11),  # T4
+    (0.0030, 12),  # T5
+    (0.0038, 13),  # T7
+    (0.0048, 14),  # T9
+    (0.0061, 15),  # T12
+    (0.0064, 16),  # T13
+    (0.0074, 17),  # T19
+    (0.0078, 18),  # T20
+    (0.0081, 19),  # T21
+    (0.0085, 20),  # T22
+    (0.0089, 21),  # T23
+    (0.0093, 22),  # T24
+    (0.0098, 23),  # T25
+    (0.0103, 24),  # T26
+    (0.0108, 24),  # T27
+    (0.0114, 24),  # T28
+    (0.0120, 24),  # T29
+    (0.0129, 24),  # T31
+    (0.0135, 25),  # T32
+    (0.0142, 25),  # T33
+    (0.0250, 25),  # T43
+]
+
 class Collector(commands.GroupCog, group_name="claim"):
     """
-    Cog for claiming collector countryballs.
+    Cog for claiming collector and diamond countryballs.
     """
 
     @app_commands.command()
@@ -53,26 +103,11 @@ class Collector(commands.GroupCog, group_name="claim"):
 
         # Determine the required amount based on rarity
         rarity = countryball.rarity
-        if rarity <= 0.7:
-            required_amount = 15
-        elif rarity <= 0.9:
-            required_amount = 22
-        elif rarity <= 38.0:
-            required_amount = 35
-        elif rarity <= 52.0:
-            required_amount = 40
-        elif rarity <= 58.0:
-            required_amount = 50
-        elif rarity <= 68.0:
-            required_amount = 70
-        elif rarity <= 70.0:
-            required_amount = 85
-        elif rarity <= 100.0:
-            required_amount = 100
-        elif rarity <= 120.0:
-            required_amount = 120
-        else:
-            required_amount = 0
+        required_amount = 0
+        for threshold, amount in RARITY_REQUIREMENTS:
+            if rarity <= threshold:
+                required_amount = amount
+                break
 
         # Check if the player has enough balls to claim the collector
         if len(player_balls) < required_amount:
@@ -128,8 +163,14 @@ class Collector(commands.GroupCog, group_name="claim"):
             )
             return
 
-        # Check if the player has enough shiny instances of the ball
-        required_shinies = 1  # Set the required number of shinies here
+        # Determine required shinies based on rarity
+        rarity = countryball.rarity
+        required_shinies = 1  # default fallback
+        for threshold, amount in DIAMOND_SHINY_REQUIREMENTS_CLUSTERED:
+            if rarity <= threshold:
+                required_shinies = amount
+                break
+
         shiny_count = await BallInstance.filter(
             ball=countryball, player=player, shiny=True
         ).count()

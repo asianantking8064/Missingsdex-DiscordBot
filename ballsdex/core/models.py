@@ -8,13 +8,17 @@ from typing import TYPE_CHECKING, Iterable, Tuple, Type
 
 import discord
 from discord.utils import format_dt
-from fastapi_admin.models import AbstractAdmin
 from tortoise import exceptions, fields, models, signals, timezone, validators
+from tortoise.contrib.postgres.indexes import PostgreSQLIndex
+from tortoise.expressions import Q
 
 from ballsdex.core.image_generator.image_gen import draw_card
+from ballsdex.settings import settings
 
 if TYPE_CHECKING:
     from tortoise.backends.base.client import BaseDBAsyncClient
+
+    from ballsdex.core.bot import BallsDexBot
 
 
 balls: dict[int, Ball] = {}
@@ -40,17 +44,6 @@ class DiscordSnowflakeValidator(validators.Validator):
     def __call__(self, value: int):
         if not 17 <= len(str(value)) <= 19:
             raise exceptions.ValidationError("Discord IDs are between 17 and 19 characters long")
-
-
-class User(AbstractAdmin):
-    last_login = fields.DatetimeField(description="Last Login", default=datetime.now)
-    avatar = fields.CharField(max_length=200, default="")
-    intro = fields.TextField(default="")
-    created_at = fields.DatetimeField(auto_now_add=True)
-
-    def __str__(self):
-        return f"{self.pk}#{self.username}"
-
 
 class GuildConfig(models.Model):
     guild_id = fields.BigIntField(
@@ -400,6 +393,19 @@ class PrivacyPolicy(IntEnum):
     DENY = 2
     SAME_SERVER = 3
 
+class MentionPolicy(IntEnum):
+    ALLOW = 1
+    DENY = 2
+
+
+class FriendPolicy(IntEnum):
+    ALLOW = 1
+    DENY = 2
+
+
+class TradeCooldownPolicy(IntEnum):
+    COOLDOWN = 1
+    BYPASS = 2
 
 class Player(models.Model):
     discord_id = fields.BigIntField(
@@ -420,6 +426,19 @@ class Player(models.Model):
     claimed_collectors: fields.ReverseRelation["ClaimedCollector"]
     def __str__(self) -> str:
         return str(self.discord_id)
+    
+    async def is_friend(self, other_player: "Player") -> bool:
+        return await Friendship.filter(
+            (Q(player1=self) & Q(player2=other_player))
+            | (Q(player1=other_player) & Q(player2=self))
+        ).exists()
+
+    async def is_blocked(self, other_player: "Player") -> bool:
+        return await Block.filter((Q(player1=self) & Q(player2=other_player))).exists()
+
+    @property
+    def can_be_mentioned(self) -> bool:
+        return self.mention_policy == MentionPolicy.ALLOW
     
 class ClaimedCollector(models.Model):
     player = fields.ForeignKeyField("models.Player", related_name="claimed_collectors")
@@ -480,3 +499,46 @@ class TradeObject(models.Model):
 
     def __str__(self) -> str:
         return str(self.pk)
+
+class Friendship(models.Model):
+    id: int
+    player1: fields.ForeignKeyRelation[Player] = fields.ForeignKeyField(
+        "models.Player", related_name="friend1"
+    )
+    player2: fields.ForeignKeyRelation[Player] = fields.ForeignKeyField(
+        "models.Player", related_name="friend2"
+    )
+    since = fields.DatetimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return str(self.pk)
+
+
+class Block(models.Model):
+    id: int
+    player1: fields.ForeignKeyRelation[Player] = fields.ForeignKeyField(
+        "models.Player", related_name="block1"
+    )
+    player2: fields.ForeignKeyRelation[Player] = fields.ForeignKeyField(
+        "models.Player", related_name="block2"
+    )
+    date = fields.DatetimeField(auto_now_add=True)
+
+    def __str__(self) -> str:
+        return str(self.pk)
+
+
+class User(models.Model):
+    """Admin user model for fastapi-admin authentication"""
+    id = fields.IntField(pk=True)
+    username = fields.CharField(max_length=50, unique=True)
+    password = fields.CharField(max_length=200)
+    avatar = fields.CharField(max_length=200, null=True)
+    created_at = fields.DatetimeField(auto_now_add=True)
+
+    class Meta:
+        table = "admin_user"
+
+    def __str__(self) -> str:
+        return self.username
+    
