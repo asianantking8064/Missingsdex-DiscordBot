@@ -23,6 +23,7 @@ from ballsdex.core.models import (
     balls,
     specials,
 )
+from ballsdex.core.utils.utils import can_mention
 from ballsdex.settings import settings
 
 if TYPE_CHECKING:
@@ -60,29 +61,49 @@ class CountryballNamePrompt(Modal, title=f"Catch this {settings.collectible_name
 
         player, _ = await Player.get_or_create(discord_id=interaction.user.id)
         if self.view.caught:
+            slow_message = random.choice(settings.slow_messages).format(
+                user=interaction.user.mention,
+                collectible=settings.collectible_name,
+                ball=self.view.name,
+                collectibles=settings.plural_collectible_name,
+            )
+
             await interaction.followup.send(
-                f"{interaction.user.mention} I was caught already!",
+                slow_message,
                 ephemeral=True,
-                allowed_mentions=discord.AllowedMentions(users=player.can_be_mentioned),
+                allowed_mentions=await can_mention([player]),
             )
             return
 
-        if self.view.is_name_valid(self.name.value):
-            ball, has_caught_before = await self.view.catch_ball(
-                interaction.user, player=player, guild=interaction.guild
-            )
+        if not self.view.is_name_valid(self.name.value):
+            if len(self.name.value) > 500:
+                wrong_name = self.name.value[:500] + "..."
+            else:
+                wrong_name = self.name.value
 
-            await interaction.followup.send(
-                f"{interaction.user.mention} {self.view.get_message(ball, has_caught_before)}",
-                allowed_mentions=discord.AllowedMentions(users=player.can_be_mentioned),
+            wrong_message = random.choice(settings.wrong_messages).format(
+                user=interaction.user.mention,
+                collectible=settings.collectible_name,
+                ball=self.view.name,
+                collectibles=settings.plural_collectible_name,
+                wrong=wrong_name,
             )
-            await interaction.followup.edit_message(self.view.message.id, view=self.view)
-        else:
             await interaction.followup.send(
-                f"{interaction.user.mention} Wrong name!",
-                allowed_mentions=discord.AllowedMentions(users=player.can_be_mentioned),
+                wrong_message,
+                allowed_mentions=await can_mention([player]),
                 ephemeral=False,
             )
+            return
+
+        ball, has_caught_before = await self.view.catch_ball(
+            interaction.user, player=player, guild=interaction.guild
+        )
+
+        await interaction.followup.send(
+            self.view.get_catch_message(ball, has_caught_before, interaction.user.mention),
+            allowed_mentions=discord.AllowedMentions(users=player.can_be_mentioned),
+        )
+        await interaction.followup.edit_message(self.view.message.id, view=self.view)
 
 
 class BallSpawnView(View):
@@ -126,6 +147,9 @@ class BallSpawnView(View):
         self.special: Special | None = None
         self.atk_bonus: int | None = None
         self.hp_bonus: int | None = None
+        self.og_id: int
+
+        self.catch_button.label = settings.catch_button_label
 
     async def interaction_check(self, interaction: discord.Interaction["BallsDexBot"], /) -> bool:
         return await interaction.client.blacklist_check(interaction)
@@ -164,6 +188,7 @@ class BallSpawnView(View):
 
         view = cls(bot, ball_instance.ball)
         view.ballinstance = ball_instance
+        view.og_id = ball_instance.player.discord_id
         return view
 
     @classmethod
@@ -235,16 +260,22 @@ class BallSpawnView(View):
         try:
             permissions = channel.permissions_for(channel.guild.me)
             if permissions.attach_files and permissions.send_messages:
+                spawn_message = random.choice(settings.spawn_messages).format(
+                    collectible=settings.collectible_name,
+                    ball=self.name,
+                    collectibles=settings.plural_collectible_name,
+                )
+
                 self.message = await channel.send(
-                    f"A wild {settings.collectible_name} appeared!",
+                    spawn_message,
                     view=self,
                     file=discord.File(file_location, filename=file_name),
                 )
                 return True
             else:
-                log.error("Missing permission to spawn ball in channel %s.", channel)
+                log.warning("Missing permission to spawn ball in channel %s.", channel)
         except discord.Forbidden:
-            log.error(f"Missing permission to spawn ball in channel {channel}.")
+            log.warning(f"Missing permission to spawn ball in channel {channel}.")
         except discord.HTTPException:
             log.error("Failed to spawn ball", exc_info=True)
         return False
@@ -268,8 +299,6 @@ class BallSpawnView(View):
             possible_names = (self.name.lower(), *self.model.catch_names.split(";"))
         else:
             possible_names = (self.name.lower(),)
-        if self.model.translations:
-            possible_names += tuple(x.lower() for x in self.model.translations.split(";"))
         cname = text.lower().strip()
         # Remove fancy unicode characters like ’ to replace to '
         cname = cname.replace("\u2019", "'")
@@ -330,7 +359,7 @@ class BallSpawnView(View):
             self.ballinstance.trade_player = self.ballinstance.player
             self.ballinstance.player = player
             self.ballinstance.locked = None  # type: ignore
-            await self.ballinstance.save(update_fields=("player", "trade_player", "locked"))
+            await self.ballinstance.save(update_fields=("player_id", "trade_player_id", "locked"))
             return self.ballinstance, is_new
 
         # stat may vary by +/- 20% of base stat
@@ -377,7 +406,7 @@ class BallSpawnView(View):
 
         return ball, is_new
 
-    def get_message(self, ball: BallInstance, new_ball: bool) -> str:
+    def get_catch_message(self, ball: BallInstance, new_ball: bool, mention: str) -> str:
         """
         Generate a user-facing message after a ball has been caught.
 
@@ -397,7 +426,20 @@ class BallSpawnView(View):
                 f"This is a **new {settings.collectible_name}** "
                 "that has been added to your completion!"
             )
+        if self.ballinstance:
+            text += f"This {settings.collectible_name} was dropped by <@{self.og_id}>\n"
+
+        caught_message = (
+            random.choice(settings.caught_messages).format(
+                user=mention,
+                collectible=settings.collectible_name,
+                ball=self.name,
+                collectibles=settings.plural_collectible_name,
+            )
+            + " "
+        )
+
         return (
-            f"You caught **{self.name}!** "
-            f"`(#{ball.pk:0X}, {ball.attack_bonus:+}%/{ball.health_bonus:+}%)`\n\n{text}"
+            caught_message
+            + f"`(#{ball.pk:0X}, {ball.attack_bonus:+}%/{ball.health_bonus:+}%)`\n\n{text}"
         )
