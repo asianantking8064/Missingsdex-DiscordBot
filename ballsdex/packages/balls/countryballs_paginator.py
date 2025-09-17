@@ -20,26 +20,7 @@ class CountryballsSource(menus.ListPageSource):
     async def format_page(self, menu: CountryballsSelector, balls: List[BallInstance]):
         menu.set_options(balls)
         return True  # signal to edit the page
-'''
-class CountryballsSelector(Pages):
-    def set_options(self, balls: List[BallInstance]):
-        options: List[discord.SelectOption] = []
-        for ball in balls:
-            emoji = self.bot.get_emoji(int(ball.countryball.emoji_id))
-            favorite = "❤️ " if ball.favorite else ""
-            shiny = "✨ " if ball.shiny else ""
-            special = ball.special_emoji(self.bot, True)
-            nickname = f" ({ball.nickname})" if ball.nickname else ""
-            options.append(
-                discord.SelectOption(
-                    label=f"{favorite}{shiny}{special}#{ball.pk:0X} {ball.countryball.country}{nickname}",
-                    description=f"ATK: {ball.attack_bonus:+d}% • HP: {ball.health_bonus:+d}% • "
-                    f"Caught on {ball.catch_date.strftime('%d/%m/%y %H:%M')}",
-                    emoji=emoji,
-                    value=f"{ball.pk}",
-                )
-            )
-        self.select_ball_menu.options = options'''
+
 
 class CountryballsSelector(Pages):
     def __init__(self, interaction: discord.Interaction["BallsDexBot"], balls: List[BallInstance]):
@@ -52,14 +33,16 @@ class CountryballsSelector(Pages):
         options: List[discord.SelectOption] = []
         for ball in balls:
             emoji = self.bot.get_emoji(int(ball.countryball.emoji_id))
-            favorite = "❤️ " if ball.favorite else ""
-            shiny = "✨ " if ball.shiny else ""
+            favorite = f"{settings.favorited_collectible_emoji} " if ball.favorite else ""
             special = ball.special_emoji(self.bot, True)
             options.append(
                 discord.SelectOption(
-                    label=f"{favorite}{shiny}{special}#{ball.pk:0X} {ball.countryball.country}",
-                    description=f"ATK: {ball.attack_bonus:+d}% • HP: {ball.health_bonus:+d}% • "
-                    f"Caught on {ball.catch_date.strftime('%d/%m/%y %H:%M')}",
+                    label=f"{favorite}{special}#{ball.pk:0X} {ball.countryball.country}",
+                    description=(
+                        f"ATK: {ball.attack}({ball.attack_bonus:+d}%) "
+                        f"• HP: {ball.health}({ball.health_bonus:+d}%) • "
+                        f"{ball.catch_date.strftime('%Y/%m/%d | %H:%M')}"
+                    ),
                     emoji=emoji,
                     value=f"{ball.pk}",
                 )
@@ -67,22 +50,29 @@ class CountryballsSelector(Pages):
         self.select_ball_menu.options = options
 
     @discord.ui.select()
-    async def select_ball_menu(self, interaction: discord.Interaction, item: discord.ui.Select):
+    async def select_ball_menu(
+        self, interaction: discord.Interaction["BallsDexBot"], item: discord.ui.Select
+    ):
         await interaction.response.defer(thinking=True)
         ball_instance = await BallInstance.get(
             id=int(interaction.data.get("values")[0])  # type: ignore
         )
         await self.ball_selected(interaction, ball_instance)
 
-    async def ball_selected(self, interaction: discord.Interaction, ball_instance: BallInstance):
+    async def ball_selected(
+        self, interaction: discord.Interaction["BallsDexBot"], ball_instance: BallInstance
+    ):
         raise NotImplementedError()
 
 
 class CountryballsViewer(CountryballsSelector):
-    async def ball_selected(self, interaction: discord.Interaction, ball_instance: BallInstance):
-        content, file = await ball_instance.prepare_for_message(interaction)
-        await interaction.followup.send(content=content, file=file)
+    async def ball_selected(
+        self, interaction: discord.Interaction["BallsDexBot"], ball_instance: BallInstance
+    ):
+        content, file, view = await ball_instance.prepare_for_message(interaction)
+        await interaction.followup.send(content=content, file=file, view=view)
         file.close()
+
 
 class DuplicateSource(menus.ListPageSource):
     def __init__(self, entries: List[str]):
@@ -91,6 +81,7 @@ class DuplicateSource(menus.ListPageSource):
     async def format_page(self, menu, items):
         menu.set_options(items)
         return True  # signal to edit the page
+
 
 class DuplicateViewMenu(Pages):
     def __init__(self, interaction: discord.Interaction["BallsDexBot"], list, dupe_type: str):
@@ -113,7 +104,7 @@ class DuplicateViewMenu(Pages):
     @discord.ui.select()
     async def dupe_ball_menu(self, interaction: discord.Interaction, item: discord.ui.Select):
         await interaction.response.defer(thinking=True, ephemeral=True)
-        if self.dupe_type == settings.collectible_name:
+        if self.dupe_type == settings.plural_collectible_name:
             balls = await BallInstance.filter(
                 ball__country=item.values[0], player__discord_id=interaction.user.id
             ).count()
@@ -122,5 +113,5 @@ class DuplicateViewMenu(Pages):
                 special__name=item.values[0], player__discord_id=interaction.user.id
             ).count()
 
-        plural = settings.collectible_name if balls == 1 else settings.collectible_name
+        plural = settings.collectible_name if balls == 1 else settings.plural_collectible_name
         await interaction.followup.send(f"You have {balls:,} {item.values[0]} {plural}.")

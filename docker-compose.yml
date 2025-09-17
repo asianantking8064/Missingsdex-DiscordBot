@@ -1,5 +1,3 @@
-version: '3.4'
-
 x-common-env-vars:
   - &postgres-db
     POSTGRES_DB=ballsdex
@@ -9,7 +7,6 @@ x-common-env-vars:
     "BALLSDEXBOT_DB_URL=postgres://ballsdex:${POSTGRES_PASSWORD}@postgres:5432/ballsdex"
 
 services:
-
   bot:
     restart: "no"
     image: ballsdex
@@ -17,41 +14,66 @@ services:
     environment:
       - *postgres-url
     depends_on:
-      - postgres-db
+      migration:
+        condition: service_completed_successfully
+      postgres-db:
+        condition: service_healthy
     # ports:
     #   - "15260:15260"
     networks:
       - internal
     volumes:
-      - type: bind
-        source: ./
-        target: /code
+      - "./:/code"
     tty: true
-    command: poetry run python3 -m ballsdex --dev
+    working_dir: /code/
+    command: python3 -m ballsdex
 
   admin-panel:
     image: ballsdex
+    build: .
     ports:
       - "80:8000"
     networks:
       - internal
     environment:
       - *postgres-url
-      - "BALLSDEXBOT_REDIS_URL=redis://redis"
+      # if serving the admin panel online, copy the file "production.example.py" and uncomment
+      # - DJANGO_SETTINGS_MODULE=admin_panel.settings.production
     depends_on:
-      - postgres-db
-      - redis-cache
+      migration:
+        condition: service_completed_successfully
+      postgres-db:
+        condition: service_healthy
     volumes:
-      - type: bind
-        source: ./
-        target: /code
+      - "./:/code"
     tty: true
-    command: poetry run uvicorn ballsdex.core.admin:_app --host 0.0.0.0
+    working_dir: /code/admin_panel
+    command: "python3 -m uvicorn admin_panel.asgi:application --host 0.0.0.0"
+
+  migration:
+    image: ballsdex
+    build: .
+    networks:
+      - internal
+    environment:
+      - *postgres-url
+    volumes:
+      - ./:/code
+    depends_on:
+      postgres-db:
+        condition: service_healthy
+    working_dir: /code/admin_panel
+    command: >
+      sh -c "
+      python3 manage.py migrate --no-input --fake-initial &&
+      python3 manage.py collectstatic --no-input
+      "
 
   postgres-db:
     image: postgres
     restart: always
     hostname: postgres
+    shm_size: 1g
     environment:
       - *postgres-db
       - *postgres-user
@@ -63,15 +85,21 @@ services:
       - internal
     volumes:  # Persist the db data
       - database-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-ballsdex}"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
 
   postgres-backup:
     image: prodrigestivill/postgres-backup-local
     restart: always
     user: postgres:postgres
     volumes:
-      - /var/opt/pgbackups:/backups
+      - ./pgbackups:/backups
     depends_on:
-      - postgres-db
+      postgres-db:
+        condition: service_healthy
     networks:
       - internal
     environment:
@@ -84,20 +112,6 @@ services:
       - BACKUP_KEEP_WEEKS=4
       - BACKUP_KEEP_MONTHS=6
       - HEALTHCHECK_PORT=3928
-
-  redis-cache:
-    image: redis:latest
-    restart: always
-    hostname: redis
-    # ports:
-    #   - "6379:6379"
-    networks:
-      - internal
-    environment:
-      - ALLOW_EMPTY_PASSWORD=yes
-    command: redis-server --save 20 1 --loglevel warning
-    volumes: 
-      - cache-data:/data
 
   # Uncomment to enable gateway proxy feature and
   # add "gateway-url: ws://gateway_proxy:5421" to your config.yaml

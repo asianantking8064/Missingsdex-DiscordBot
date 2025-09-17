@@ -18,6 +18,7 @@ def is_staff(interaction: discord.Interaction["BallsDexBot"]) -> bool:
             return True
     return False
 
+
 async def inventory_privacy(
     bot: "BallsDexBot",
     interaction: discord.Interaction["BallsDexBot"],
@@ -30,66 +31,32 @@ async def inventory_privacy(
         return True
     if is_staff(interaction):
         return True
-    try:
-        if privacy_policy == PrivacyPolicy.DENY:
-            if not interaction.response.is_done():
-                await interaction.response.send_message(
-                    "This user has set their inventory to private.", ephemeral=True
-                )
-            else:
-                await interaction.followup.send(
-                    "This user has set their inventory to private.", ephemeral=True
-                )
+    if privacy_policy == PrivacyPolicy.DENY:
+        await interaction.followup.send(
+            "This user has set their inventory to private.", ephemeral=True
+        )
+        return False
+    elif privacy_policy == PrivacyPolicy.FRIENDS:
+        if not await interacting_player.is_friend(player):
+            await interaction.followup.send(
+                "This users inventory can only be viewed from users they have added as friends.",
+                ephemeral=True,
+            )
             return False
-        elif privacy_policy == PrivacyPolicy.FRIENDS:
-            if not await interacting_player.is_friend(player):
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        "This users inventory can only be viewed from users they have added as friends.",
-                        ephemeral=True,
-                    )
-                else:
-                    await interaction.followup.send(
-                        "This users inventory can only be viewed from users they have added as friends.",
-                        ephemeral=True,
-                    )
-                return False
-        elif privacy_policy == PrivacyPolicy.SAME_SERVER:
-            if not bot.intents.members:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        "This user has their policy set to `Same Server`, "
-                        "however I do not have the `members` intent to check this.",
-                        ephemeral=True,
-                    )
-                else:
-                    await interaction.followup.send(
-                        "This user has their policy set to `Same Server`, "
-                        "however I do not have the `members` intent to check this.",
-                        ephemeral=True,
-                    )
-                return False
-            if interaction.guild is None:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        "This user has set their inventory to private.", ephemeral=True
-                    )
-                else:
-                    await interaction.followup.send(
-                        "This user has set their inventory to private.", ephemeral=True
-                    )
-                return False
-            elif interaction.guild.get_member(user_obj.id) is None:
-                if not interaction.response.is_done():
-                    await interaction.response.send_message(
-                        "This user is not in the server.", ephemeral=True
-                    )
-                else:
-                    await interaction.followup.send(
-                        "This user is not in the server.", ephemeral=True
-                    )
-                return False
-    except discord.NotFound:
-        # Interaction expired or already responded to, can't send message
-        pass
+    elif privacy_policy == PrivacyPolicy.SAME_SERVER:
+        if not bot.intents.members:
+            await interaction.followup.send(
+                "This user has their policy set to `Same Server`, "
+                "however I do not have the `members` intent to check this.",
+                ephemeral=True,
+            )
+            return False
+        if interaction.guild is None:
+            await interaction.followup.send(
+                "This user has set their inventory to private.", ephemeral=True
+            )
+            return False
+        elif interaction.guild.get_member(user_obj.id) is None:
+            await interaction.followup.send("This user is not in the server.", ephemeral=True)
+            return False
     return True

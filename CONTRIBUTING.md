@@ -11,97 +11,97 @@ Using Docker:
 
 1. Install Docker.
 2. Run `docker compose build` at the root of this repository.
-3. Create an `.env` file like this:
-
-   ```env
-   BALLSDEXBOT_TOKEN=your discord token
-   POSTGRES_PASSWORD=a random string
-   ```
-
-4. Run `docker compose up -d postgres-db redis-cache`. This will not start the bot.
+3. Run `docker compose up -d postgres-db`. This will not start the bot, only the
+   database and redis server.
 
 ----
 
-Without docker, check how to install and setup PostgreSQL and Redis-server on your OS.
+Without docker, check how to install and setup PostgreSQL on your OS.
 Export the appropriate environment variables as described in the
 [README](README.md#without-docker).
 
 ### Installing the dependencies
 
-1. Get Python 3.10 and pip
-2. Install poetry with `pip install poetry`
-3. Run `poetry install`
-4. You may run commands inside the virtualenv with `poetry run ...`, or use `poetry shell`
-5. Set up your IDE Python version to the one from Poetry. The path to the virtualenv can
-   be obtained with `poetry show -v`.
+1. Get Python 3.13 and pip.
+2. Install poetry with `pip install poetry`.
+3. Run `poetry install`.
+4. You may run commands inside the virtualenv with `poetry run ...`, or use `poetry shell`.
 
 ## Running the code
 
+Before running any command, you must be in the poetry virtualenv, with the following
+environment variables exported:
+
+```bash
+poetry shell
+export BALLSDEXBOT_DB_URL="postgres://ballsdex:defaultballsdexpassword@localhost:5432/ballsdex"
+```
+
+If needed, feel free to change the host, port, user or password of the database or redis server.
+
 ### Starting the bot
 
-- `poetry shell`
-- ```bash
-  BALLSDEXBOT_DB_URL="postgres://ballsdex:password@localhost:5432/ballsdex" \
-  python3 -m ballsdex --dev --debug
-  ```
+```bash
+python3 -m ballsdex --dev --debug
+```
 
-Replace `password` with the same value as the one in the `.env` file.
-If appropriate, you may also replace `localhost` and `5432` for the host and the port.
+You can do `python3 -m ballsdex -h` to see the available options.
 
 ### Starting the admin panel
 
-**Warning: You need to run migrations from the bot at least once before starting the admin
-panel without the other components.**
+```bash
+cd admin_panel
+export DJANGO_SETTINGS_MODULE=admin_panel.settings.dev
+python3 manage.py migrate
+python3 manage.py collectstatic --no-input
+uvicorn --reload --reload-include "*.html" admin_panel.asgi:application
+```
 
-If you're not actively working on the admin panel, you can just do `docker compose up admin-panel`.
-Otherwise, follow these instructions to directly have the process without rebuilding.
+You will be running the admin panel with additional debug tools. There is the django debug
+toolbar to inspect SQL queries, loading times, template loading and other tools. You also get
+pyinstrument, allowing you to profile a page by appending `?profile` at the end.
 
-- `poetry shell`
-- ```bash
-  BALLSDEXBOT_DB_URL="postgres://ballsdex:password@localhost:5432/ballsdex" \
-  BALLSDEXBOT_REDIS_URL="redis://127.0.0.1" \
-  python3 -m ballsdex --dev --debug
-  ```
+> [!TIP]
+> `python3 manage.py` contains a lot of commands, feel free to explore them! To name a few:
+>
+> - `shell` launches a Python REPL ready to interact with models and database
+> - `dbshell` will launch `psql` with the right settings for the database
+> - `check` performs general system checks to ensure everything works
+> - `createsuperuser` creates a superuser account
+> - `showmigrations` shows the applied/missing migrations
 
-Once again, replace `password` with the same value as the one in the `.env` file.
-If appropriate, you may also replace `localhost` and `5432` for the host and the port.
+> [!WARNING]
+> Do not use `python3 manage.py runserver` to run the server, since the bot relies on async code.
+> Django must be started with an ASGI server, not the default WSGI.
+
+## Integrating your IDE
+
+To have proper autocompletion and type checking, your IDE must be aware of your poetry virtualenv.
+
+The path to Python can be obtained with `poetry env info -p`, copy that and configure your editor
+to use it. Some editors like VS code may detect your poetry env automatically when picking
+versions.
+
+You can also install extensions to work with black, flake8 and pyright (Pylance for VS code).
+Their configurations are already written in `pyproject.toml`, so it should work as-is.
 
 ## Migrations
 
-When modifying the Tortoise models, you need to create a migration file to reflect the changes
-everywhere. For this, we're using [aerich](https://github.com/tortoise/aerich).
+If you are modifying models definition, you need migrations to update the database schema.
 
-### Applying the changes from remote
+First, synchronize your changes between `ballsdex/core/models.py` and
+`admin_panel/bd_models/models.py`, they must be identical!
 
-When new migrations are available, you can either start the bot to run them automatically, or
-execute the following command:
+Then you can run `python3 manage.py makemigrations` to generate a migration file. Re-read its
+contents to ensure there is only what you modified, and commit it.
 
-```sh
-BALLSDEXBOT_DB_URL="postgres://ballsdex:password@localhost:5432/ballsdex" \
-aerich upgrade
-```
-
-Once again, replace `password` with the same value as the one in the `.env` file.
-If appropriate, you may also replace `localhost` and `5432` for the host and the port.
-
-### Creating new migrations
-
-If you modified the models, `aerich` can automatically generate a migration file.
-
-**You need to make sure you have already ran previous migrations, and that your database
-is not messy!** Aerich's behaviour can be odd if not in ideal conditions.
-
-Execute the following command to generate migrations, and push the created files:
-
-```sh
-BALLSDEXBOT_DB_URL="postgres://ballsdex:password@localhost:5432/ballsdex" \
-aerich migrate
-```
+You can read more about migrations
+[here](https://docs.djangoproject.com/en/5.1/topics/migrations/), the engine is very extensive!
 
 ## Coding style
 
-The repo is validating code with `flake8` and formatting with `black`. They can be setup as a
-pre-commit hook to make them run before committing files:
+The code is formatted by `black`, style verified by `flake8`, and static checked by `pyright`.
+They can be setup as a pre-commit hook to make them run before committing files:
 
 ```sh
 pre-commit install
@@ -112,3 +112,6 @@ You can also run them manually:
 ```sh
 pre-commit run -a
 ```
+
+All rules are defined in `pyproject.toml`, meaning your editor will pick them up if you install
+the right tools.

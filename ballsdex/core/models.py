@@ -40,10 +40,24 @@ async def lower_catch_names(
         ).lower()
 
 
+async def lower_translations(
+    model: Type[Ball],
+    instance: Ball,
+    created: bool,
+    using_db: "BaseDBAsyncClient | None" = None,
+    update_fields: Iterable[str] | None = None,
+):
+    if instance.translations:
+        instance.translations = ";".join(
+            [x.strip() for x in instance.translations.split(";")]
+        ).lower()
+
+
 class DiscordSnowflakeValidator(validators.Validator):
     def __call__(self, value: int):
         if not 17 <= len(str(value)) <= 19:
             raise exceptions.ValidationError("Discord IDs are between 17 and 19 characters long")
+
 
 class GuildConfig(models.Model):
     guild_id = fields.BigIntField(
@@ -54,6 +68,11 @@ class GuildConfig(models.Model):
     )
     enabled = fields.BooleanField(
         description="Whether the bot will spawn countryballs in this guild", default=True
+    )
+    # this option is currently disabled
+    silent = fields.BooleanField(
+        description="Whether the responses of guesses get sent as ephemeral or not",
+        default=False,
     )
 
 
@@ -81,8 +100,8 @@ class Special(models.Model):
         null=True,
         default=None,
     )
-    start_date = fields.DatetimeField()
-    end_date = fields.DatetimeField()
+    start_date = fields.DatetimeField(null=True, default=None)
+    end_date = fields.DatetimeField(null=True, default=None)
     rarity = fields.FloatField(
         description="Value between 0 and 1, chances of using this special background."
     )
@@ -94,6 +113,9 @@ class Special(models.Model):
     )
     tradeable = fields.BooleanField(default=True)
     hidden = fields.BooleanField(default=False, description="Hides the event from user commands")
+    credits = fields.CharField(
+        max_length=64, description="Author of the special event artwork", null=True
+    )
 
     def __str__(self) -> str:
         return self.name
@@ -103,12 +125,23 @@ class Ball(models.Model):
     regime_id: int
     economy_id: int
 
-    country = fields.CharField(max_length=48, unique=True)
-    short_name = fields.CharField(max_length=12, null=True, default=None)
+    country = fields.CharField(max_length=48, unique=True, description="Name of this countryball")
+    short_name = fields.CharField(
+        max_length=24,
+        null=True,
+        default=None,
+        description="Alternative shorter name to be used in card design, "
+        "12 characters max, optional",
+    )
     catch_names = fields.TextField(
         null=True,
         default=None,
         description="Additional possible names for catching this ball, separated by semicolons",
+    )
+    translations = fields.TextField(
+        null=True,
+        default=None,
+        description="Translations for the country name, separated by semicolons",
     )
     regime: fields.ForeignKeyRelation[Regime] = fields.ForeignKeyField(
         "models.Regime", description="Political regime of this country", on_delete=fields.CASCADE
@@ -121,9 +154,16 @@ class Ball(models.Model):
     )
     health = fields.IntField(description="Ball health stat")
     attack = fields.IntField(description="Ball attack stat")
-    rarity = fields.FloatField(description="Rarity of this ball")
-    enabled = fields.BooleanField(default=True)
-    tradeable = fields.BooleanField(default=True)
+    rarity = fields.FloatField(
+        description="Rarity of this ball. "
+        "Higher number means more likely to spawn, 0 is unspawnable."
+    )
+    enabled = fields.BooleanField(
+        default=True, description="Disabled balls will never spawn or show up in completion."
+    )
+    tradeable = fields.BooleanField(
+        default=True, description="Controls whether this ball can be traded or donated."
+    )
     emoji_id = fields.BigIntField(
         description="Emoji ID for this ball", validators=[DiscordSnowflakeValidator()]
     )
@@ -135,10 +175,10 @@ class Ball(models.Model):
     )
     credits = fields.CharField(max_length=64, description="Author of the collection artwork")
     capacity_name = fields.CharField(
-        max_length=64, description="Name of the countryball's capacity"
+        max_length=64, description="Name of the countryball's ability"
     )
     capacity_description = fields.CharField(
-        max_length=256, description="Description of the countryball's capacity"
+        max_length=256, description="Description of the countryball's ability"
     )
     capacity_logic = fields.JSONField(description="Effect of this capacity", default={})
     created_at = fields.DatetimeField(auto_now_add=True, null=True)
@@ -158,6 +198,7 @@ class Ball(models.Model):
 
 
 Ball.register_listener(signals.Signals.pre_save, lower_catch_names)
+Ball.register_listener(signals.Signals.pre_save, lower_translations)
 
 
 class BallInstance(models.Model):
@@ -174,7 +215,6 @@ class BallInstance(models.Model):
     server_id = fields.BigIntField(
         description="Discord server ID where this ball was caught", null=True
     )
-    shiny = fields.BooleanField(default=False)
     special: fields.ForeignKeyRelation[Special] | None = fields.ForeignKeyField(
         "models.Special", null=True, default=None, on_delete=fields.SET_NULL
     )
@@ -190,18 +230,15 @@ class BallInstance(models.Model):
         null=True,
         default=None,
     )
-    '''
-    nickname = fields.CharField(
-        max_length=64,
-        null=True,
-        blank=True,
-        description="Nickname for the ball instance",
-    )
-    '''
     extra_data = fields.JSONField(default={})
 
     class Meta:
         unique_together = ("player", "id")
+        indexes = [
+            PostgreSQLIndex(fields=("ball_id",)),
+            PostgreSQLIndex(fields=("player_id",)),
+            PostgreSQLIndex(fields=("special_id",)),
+        ]
 
     @property
     def is_tradeable(self) -> bool:
@@ -236,15 +273,13 @@ class BallInstance(models.Model):
 
     def __str__(self) -> str:
         return self.to_string()
-    
+
     def to_string(self, bot: discord.Client | None = None, is_trade: bool = False) -> str:
         emotes = ""
         if bot and self.pk in bot.locked_balls and not is_trade:  # type: ignore
             emotes += "🔒"
-        if self.favorite:
-            emotes += "❤️"
-        if self.shiny:
-            emotes += "✨"
+        if self.favorite and not is_trade:
+            emotes += settings.favorited_collectible_emoji
         if emotes:
             emotes += " "
         if self.specialcard:
@@ -255,29 +290,7 @@ class BallInstance(models.Model):
             else f"<Ball {self.ball_id}>"
         )
         return f"{emotes}#{self.pk:0X} {country}"
-        
-    
-    '''
-    def to_string(self, bot: discord.Client | None = None, is_trade: bool = False) -> str:
-        emotes = ""
-        if bot and self.pk in bot.locked_balls and not is_trade:  # type: ignore
-            emotes += "🔒"
-        if self.favorite:
-            emotes += "❤️"
-        if self.shiny:
-            emotes += "✨"
-        if emotes:
-            emotes += " "
-        if self.specialcard:
-            emotes += self.special_emoji(bot)
-        country = (
-            self.countryball.country
-            if isinstance(self.countryball, Ball)
-            else f"<Ball {self.ball_id}>"
-        )
-        nickname = f" ({self.nickname})" if self.nickname else ""
-        return f"{emotes}#{self.pk:0X} {country}{nickname}"
-    '''
+
     def special_emoji(self, bot: discord.Client | None, use_custom_emoji: bool = True) -> str:
         if self.specialcard:
             if not use_custom_emoji:
@@ -317,16 +330,16 @@ class BallInstance(models.Model):
         return text
 
     def draw_card(self) -> BytesIO:
-        image = draw_card(self)
+        image, kwargs = draw_card(self)
         buffer = BytesIO()
-        image.save(buffer, format="png")
+        image.save(buffer, **kwargs)
         buffer.seek(0)
         image.close()
         return buffer
 
     async def prepare_for_message(
-        self, interaction: discord.Interaction
-    ) -> Tuple[str, discord.File]:
+        self, interaction: discord.Interaction["BallsDexBot"]
+    ) -> Tuple[str, discord.File, discord.ui.View]:
         # message content
         trade_content = ""
         await self.fetch_related("trade_player", "special")
@@ -366,7 +379,8 @@ class BallInstance(models.Model):
         with ThreadPoolExecutor() as pool:
             buffer = await interaction.client.loop.run_in_executor(pool, self.draw_card)
 
-        return content, discord.File(buffer, "card.png")
+        view = discord.ui.View()
+        return content, discord.File(buffer, "card.webp"), view
 
     async def lock_for_trade(self):
         self.locked = timezone.now()
@@ -386,12 +400,15 @@ class DonationPolicy(IntEnum):
     ALWAYS_ACCEPT = 1
     REQUEST_APPROVAL = 2
     ALWAYS_DENY = 3
+    FRIENDS_ONLY = 4
 
 
 class PrivacyPolicy(IntEnum):
     ALLOW = 1
     DENY = 2
     SAME_SERVER = 3
+    FRIENDS = 4
+
 
 class MentionPolicy(IntEnum):
     ALLOW = 1
@@ -402,10 +419,6 @@ class FriendPolicy(IntEnum):
     ALLOW = 1
     DENY = 2
 
-
-class TradeCooldownPolicy(IntEnum):
-    COOLDOWN = 1
-    BYPASS = 2
 
 class Player(models.Model):
     discord_id = fields.BigIntField(
@@ -421,12 +434,22 @@ class Player(models.Model):
         description="How you want to handle privacy",
         default=PrivacyPolicy.DENY,
     )
-    coins = fields.IntField(default=0, description="The number of coins the player has")
+    mention_policy = fields.IntEnumField(
+        MentionPolicy,
+        description="How you want to handle mentions",
+        default=MentionPolicy.ALLOW,
+    )
+    friend_policy = fields.IntEnumField(
+        FriendPolicy,
+        description="How you want to handle friend requests",
+        default=FriendPolicy.ALLOW,
+    )
+    extra_data = fields.JSONField(default=dict)
     balls: fields.BackwardFKRelation[BallInstance]
-    claimed_collectors: fields.ReverseRelation["ClaimedCollector"]
+
     def __str__(self) -> str:
         return str(self.discord_id)
-    
+
     async def is_friend(self, other_player: "Player") -> bool:
         return await Friendship.filter(
             (Q(player1=self) & Q(player2=other_player))
@@ -439,17 +462,14 @@ class Player(models.Model):
     @property
     def can_be_mentioned(self) -> bool:
         return self.mention_policy == MentionPolicy.ALLOW
-    
-class ClaimedCollector(models.Model):
-    player = fields.ForeignKeyField("models.Player", related_name="claimed_collectors")
-    ball = fields.ForeignKeyField("models.Ball")
 
-    class Meta:
-        unique_together = ("player", "ball")
 
 class BlacklistedID(models.Model):
     discord_id = fields.BigIntField(
         description="Discord user ID", unique=True, validators=[DiscordSnowflakeValidator()]
+    )
+    moderator_id = fields.BigIntField(
+        description="Discord Moderator ID", validators=[DiscordSnowflakeValidator()], null=True
     )
     reason = fields.TextField(null=True, default=None)
     date = fields.DatetimeField(null=True, default=None, auto_now_add=True)
@@ -462,11 +482,28 @@ class BlacklistedGuild(models.Model):
     discord_id = fields.BigIntField(
         description="Discord Guild ID", unique=True, validators=[DiscordSnowflakeValidator()]
     )
+    moderator_id = fields.BigIntField(
+        description="Discord Moderator ID", validators=[DiscordSnowflakeValidator()], null=True
+    )
     reason = fields.TextField(null=True, default=None)
     date = fields.DatetimeField(null=True, default=None, auto_now_add=True)
 
     def __str__(self) -> str:
         return str(self.discord_id)
+
+
+class BlacklistHistory(models.Model):
+    id = fields.IntField(pk=True)
+    discord_id = fields.BigIntField(
+        description="Discord ID", validators=[DiscordSnowflakeValidator()]
+    )
+    moderator_id = fields.BigIntField(
+        description="Discord Moderator ID", validators=[DiscordSnowflakeValidator()]
+    )
+    reason = fields.TextField(null=True, default=None)
+    date = fields.DatetimeField(auto_now_add=True)
+    id_type = fields.CharField(max_length=64, default="user")
+    action_type = fields.CharField(max_length=64, default="blacklist")
 
 
 class Trade(models.Model):
@@ -482,6 +519,12 @@ class Trade(models.Model):
 
     def __str__(self) -> str:
         return str(self.pk)
+
+    class Meta:
+        indexes = [
+            PostgreSQLIndex(fields=("player1_id",)),
+            PostgreSQLIndex(fields=("player2_id",)),
+        ]
 
 
 class TradeObject(models.Model):
@@ -499,6 +542,14 @@ class TradeObject(models.Model):
 
     def __str__(self) -> str:
         return str(self.pk)
+
+    class Meta:
+        indexes = [
+            PostgreSQLIndex(fields=("ballinstance_id",)),
+            PostgreSQLIndex(fields=("player_id",)),
+            PostgreSQLIndex(fields=("trade_id",)),
+        ]
+
 
 class Friendship(models.Model):
     id: int
@@ -526,19 +577,3 @@ class Block(models.Model):
 
     def __str__(self) -> str:
         return str(self.pk)
-
-
-class User(models.Model):
-    """Admin user model for fastapi-admin authentication"""
-    id = fields.IntField(pk=True)
-    username = fields.CharField(max_length=50, unique=True)
-    password = fields.CharField(max_length=200)
-    avatar = fields.CharField(max_length=200, null=True)
-    created_at = fields.DatetimeField(auto_now_add=True)
-
-    class Meta:
-        table = "admin_user"
-
-    def __str__(self) -> str:
-        return self.username
-    

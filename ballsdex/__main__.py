@@ -10,10 +10,11 @@ from pathlib import Path
 from signal import SIGTERM
 
 import discord
+import sentry_sdk
 import yarl
-from aerich import Command
 from discord.ext.commands import when_mentioned_or
 from rich import print
+from sentry_sdk.integrations.asyncio import AsyncioIntegration
 from tortoise import Tortoise
 
 from ballsdex import __version__ as bot_version
@@ -28,7 +29,7 @@ TORTOISE_ORM = {
     "connections": {"default": os.environ.get("BALLSDEXBOT_DB_URL")},
     "apps": {
         "models": {
-            "models": ["ballsdex.core.models", "ballsdex.core.admin.resources", "aerich.models"],
+            "models": ["ballsdex.core.models"],
             "default_connection": "default",
         },
     },
@@ -40,6 +41,9 @@ class CLIFlags(argparse.Namespace):
     config_file: Path
     reset_settings: bool
     disable_rich: bool
+    disable_message_content: bool
+    disable_time_check: bool
+    skip_tree_sync: bool
     debug: bool
     dev: bool
 
@@ -58,6 +62,24 @@ def parse_cli_flags(arguments: list[str]) -> CLIFlags:
         help="Reset the config file with the latest default configuration",
     )
     parser.add_argument("--disable-rich", action="store_true", help="Disable rich log format")
+    parser.add_argument(
+        "--disable-message-content",
+        action="store_true",
+        help="Disable usage of message content intent through the bot",
+    )
+    parser.add_argument(
+        "--disable-time-check",
+        action="store_true",
+        help="Disables the 3 seconds delay check on interactions. Use this if you're getting a "
+        "lot of skipped interactions warning due to your PC's internal clock.",
+    )
+    parser.add_argument(
+        "--skip-tree-sync",
+        action="store_true",
+        help="Does not sync application commands to Discord. Significant startup speedup and "
+        "avoids ratelimits, but risks of having desynced commands after updates. This is always "
+        "enabled with clustering.",
+    )
     parser.add_argument("--debug", action="store_true", help="Enable debug logs")
     parser.add_argument("--dev", action="store_true", help="Enable developer mode")
     args = parser.parse_args(arguments, namespace=CLIFlags())
@@ -73,7 +95,7 @@ def reset_settings(path: Path):
 
 def print_welcome():
     print("[green]{0:-^50}[/green]".format(f" {settings.bot_name} bot "))
-    print("[green]{0: ^50}[/green]".format(f" Collect {settings.collectible_name}s "))
+    print("[green]{0: ^50}[/green]".format(f" Collect {settings.plural_collectible_name} "))
     print("[blue]{0:^50}[/blue]".format("Discord bot made by El Laggron"))
     print("")
     print(" [red]{0:<20}[/red] [yellow]{1:>10}[/yellow]".format("Bot version:", bot_version))
@@ -216,16 +238,20 @@ class RemoveWSBehindMsg(logging.Filter):
         return True
 
 
-async def init_tortoise(db_url: str):
+async def init_tortoise(db_url: str, *, skip_migrations: bool = False):
     log.debug(f"Database URL: {db_url}")
     await Tortoise.init(config=TORTOISE_ORM)
 
-    # migrations
-    command = Command(TORTOISE_ORM, app="models")
-    await command.init()
-    migrations = await command.upgrade()
-    if migrations:
-        log.info(f"Ran {len(migrations)} migrations: {', '.join(migrations)}")
+
+async def init_sentry():
+    if settings.sentry_dsn:
+        sentry_sdk.init(
+            dsn=settings.sentry_dsn,
+            environment=settings.sentry_environment,
+            release=bot_version,
+            integrations=[AsyncioIntegration()],
+        )  # TODO: Add breadcrumbs for clustering
+        log.info("Sentry initialized.")
 
 
 def main():
@@ -288,13 +314,20 @@ def main():
             command_prefix=when_mentioned_or(prefix),
             dev=cli_flags.dev,  # type: ignore
             shard_count=settings.shard_count,
+            disable_message_content=cli_flags.disable_message_content,
+            disable_time_check=cli_flags.disable_time_check,
+            skip_tree_sync=cli_flags.skip_tree_sync,
         )
 
+        loop.run_until_complete(init_sentry())
         exc_handler = functools.partial(global_exception_handler, bot)
         loop.set_exception_handler(exc_handler)
-        loop.add_signal_handler(
-            SIGTERM, lambda: loop.create_task(shutdown_handler(bot, "SIGTERM"))
-        )
+        try:
+            loop.add_signal_handler(
+                SIGTERM, lambda: loop.create_task(shutdown_handler(bot, "SIGTERM"))
+            )
+        except NotImplementedError:
+            log.warning("Cannot add signal handler for SIGTERM.")
 
         log.info("Initialized bot, connecting to Discord...")
         future = loop.create_task(bot.start(token))
